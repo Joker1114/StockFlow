@@ -1,0 +1,15 @@
+# 整理时的源码与部署基线。镜像和源码的对应提交需在发布时核对。
+project_version: "0.1.0"
+status: workspace_baseline
+deployment_config_version: "1.0.0"
+frontend:
+  version: "1.0.0"
+  git_ref: null
+backend:
+  version: "1.0.3"
+  git_ref: null
+  compose_image: "stockflow:1.0.3"
+  documented_upgrade_image: "stockflow:1.0.4"
+database:
+  engine: sqlite
+  source_schema_version: 5

@@ -1,0 +1,20 @@
+name: stockflow
+
+services:
+  backend:
+    image: stockflow:1.0.3
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: ./stockflow.env
+        format: raw
+    environment:
+      STOCKFLOW_DB_PATH: /data/stockflow.db
+    volumes:
+      - data:/data
+
+volumes:
+  data:
+    name: stockflow-data
