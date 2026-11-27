@@ -12,6 +12,8 @@
 
 ```text
 StockFlow/
+├── .git/
+├── .gitignore
 ├── .tmp-stackflow
 ├── AGENTS.md
 ├── README.md
@@ -19,7 +21,6 @@ StockFlow/
 │   ├── .dockerignore
 │   ├── .env
 │   ├── .env.example
-│   ├── .git/
 │   ├── .gitignore
 │   ├── .pytest_cache/
 │   ├── AGENTS.md
@@ -57,7 +58,6 @@ StockFlow/
 │       ├── __pycache__/
 │       └── test_api.py
 ├── deployment/
-│   ├── .git/
 │   ├── .gitattributes
 │   ├── .gitignore
 │   ├── AGENTS.md
@@ -72,7 +72,6 @@ StockFlow/
 │   ├── release.yaml
 │   └── stockflow.env.example
 ├── documents/
-│   ├── .git/
 │   ├── .gitignore
 │   ├── AGENTS.md
 │   ├── PROJECT_STRUCTURE.md
@@ -84,7 +83,6 @@ StockFlow/
 ├── frontend/
 │   ├── .env
 │   ├── .env.example
-│   ├── .git/
 │   ├── .gitignore
 │   ├── .hbuilderx/
 │   │   └── launch.json
@@ -158,35 +156,33 @@ StockFlow/
 └── stockflow-wechat-avatar.png
 ```
 
-## Git 仓库职责和首提范围
+## Git 仓库与目录职责
 
-| 仓库 | 纳入版本管理 |
+| 目录 | 纳入版本管理 |
 | --- | --- |
 | `frontend/` | 页面、组件、API 客户端、静态资源、构建配置、公开环境模板、npm 清单及锁文件、README、AGENTS 和忽略规则 |
 | `backend/` | FastAPI、数据库建表和迁移、测试、备份脚本、API 请求示例、依赖清单及锁文件、Dockerfile、Docker 构建排除规则、环境模板、README、AGENTS 和忽略规则 |
 | `deployment/` | Windows/Linux Compose、Caddy 示例、初始化及升级脚本、环境模板、发布清单、部署和运维手册、README、AGENTS、忽略和换行规则 |
 | `documents/` | 公共设计、原 MVP 开发说明、结构报告、文档索引、AGENTS 和忽略规则 |
 
-首次发布采用四条独立分支，公共文档使用 `main`，前端、后端、部署分别使用 `frontend`、`backend`、`deployment`。项目根目录承担工作区导航和本地工程约定。公共文档单独版本化，部署配置也可独立发布。
-
-四个组件共用用户指定的公开 GitHub 地址，各自使用专属分支与独立提交历史。 [GitHub 仓库](https://github.com/Joker1114/StockFlow)
+项目根目录是唯一的 Git 仓库，使用 `main` 分支。前端、后端、部署和公共文档各自保留构建、运行及文档边界，原组件提交作为合并提交的父提交保留。克隆一次即可获取完整项目。 [GitHub 仓库](https://github.com/Joker1114/StockFlow)
 
 ## 独立管理资源
 
 - 现有 `frontend/.env`、`frontend/.hbuilderx/`、`frontend/node_modules/`、`frontend/dist/`，以及后续本机签名文件和 APK/IPA。前端本机配置检查仅包含公开 API 或代理 URL。
 - 现有 `backend/.env`、`backend/data/local-check.db`、Python 缓存，以及后续虚拟环境、日志、备份和上传目录。
 - 两个平台的实际 `stockflow.env`、本机 Compose 覆盖、实际 Caddy 配置、私钥、镜像归档、数据库备份及 Docker 的 `stockflow-data` 持久卷。整理时本地部署目录无实际 env 或备份文件。
-- 根目录原有 `.tmp-stackflow` 和 `stockflow-wechat-avatar.png` 原位保留。正式签署材料、会议纪要和管理类附件可在文档仓库的忽略目录 `archive/` 独立归档。需要时再创建实际的数据、制品和备份目录。
+- 根目录原有 `.tmp-stackflow` 和 `stockflow-wechat-avatar.png` 原位保留。正式签署材料、会议纪要和管理类附件可在忽略目录 `documents/archive/` 独立归档。需要时再创建实际的数据、制品和备份目录。
 
 ## 变更清单
 
 | 类别 | 文件 |
 | --- | --- |
-| 新增 | 根目录 `AGENTS.md`；`frontend/{AGENTS.md,README.md,src/api/defaults.ts}`；`backend/{.gitignore,AGENTS.md,README.md,requirements.lock,requirements-dev.lock}`；`deployment/{.gitignore,.gitattributes,AGENTS.md,release.yaml,stockflow.env.example}`；`documents/{.gitignore,AGENTS.md,README.md,PROJECT_STRUCTURE.md}`；四个独立仓库的本地 Git 元数据 |
+| 新增 | 根目录 `AGENTS.md`；`frontend/{AGENTS.md,README.md,src/api/defaults.ts}`；`backend/{.gitignore,AGENTS.md,README.md,requirements.lock,requirements-dev.lock}`；`deployment/{.gitignore,.gitattributes,AGENTS.md,release.yaml,stockflow.env.example}`；`documents/{.gitignore,AGENTS.md,README.md,PROJECT_STRUCTURE.md}` |
 | 原位修改 | 根目录 `README.md`；`frontend/{.env.example,.gitignore,src/api/config.ts,vite.config.ts}`；`backend/{.dockerignore,.env.example,Dockerfile,app/config.py}` |
 | 移动 | `deploy/` → `deployment/`，含 `Caddyfile`、`compose.yaml`、`init-env.cmd`、`README.md` 和 `linux/{compose.yaml,init-env.sh,upgrade.sh}`；`SDD.md`、`CODEX_PROMPT.md` 和 `docs/alcohol-flow.md` → `documents/design/`；`docs/api-examples.md` → `backend/docs/api-examples.md` |
 | 移动后修改 | `documents/design/SDD.md`、`backend/docs/api-examples.md`、`deployment/README.md` 的文档引用及部署说明 |
-| 根规则归并 | 旧根目录 `.gitignore` 归并为各仓库忽略规则，旧根目录 `.gitattributes` 的 Shell LF 规则迁入部署仓库 |
+| Git 整合 | 根目录 `.gitignore` 管理根目录本机文件，各组件的忽略规则保留。部署目录继续管理 Shell LF 规则 |
 | 取消跟踪 | 无。整理前工作区没有 Git 索引或提交；排除项仍留在本机 |
 
 ## 配置管理
@@ -202,7 +198,7 @@ StockFlow/
 
 ## 版本与发布
 
-`deployment/release.yaml` 记录工作区整体基线 0.1.0、部署配置 1.0.0、前端 1.0.0、Compose 后端镜像版本 1.0.3、既有升级脚本目标 1.0.4 和源码 SQLite schema 5。后端版本字段对应 Compose 基线镜像，源码到镜像的映射待发布时确认。前后端可各自测试、构建、标记版本和发布。联合发布时填写源码 Git 引用，核对镜像标签、数据库迁移版本与客户端 API 地址，再按部署手册验证接口和客户端。
+`deployment/release.yaml` 记录工作区整体基线 0.1.0、部署配置 1.0.0、前端 1.0.0、Compose 后端镜像版本 1.0.3、既有升级脚本目标 1.0.4 和源码 SQLite schema 5。后端版本字段对应 Compose 基线镜像，源码到镜像的映射待发布时确认。前后端可从同一分支独立测试、构建和发布。联合发布时填写源码 Git 引用，核对镜像标签、数据库迁移版本与客户端 API 地址，再按部署手册验证接口和客户端。
 
 ## 验证结果
 
@@ -211,7 +207,7 @@ StockFlow/
 | 前端 Node.js 22.19.0 / npm 10.9.3 | `npm run type-check`，H5、微信小程序和 App 编译通过。使用工作区现有依赖，产物输出到临时目录。另验证合法 API 覆盖进入微信产物及非法地址构建失败 |
 | 后端 Python 3.11 | 以开发锁文件在隔离环境安装，`pip check` 通过，pytest **30 通过**。覆盖临时 SQLite 的迁移、API 和备份恢复。Starlette 报告测试客户端使用 httpx 的弃用警告 |
 | 部署定义 | 两套 Compose 的跳过 env 解析静态检查和临时 env 完整检查均通过。Linux 两个 Shell 脚本语法通过；Windows 初始化脚本在临时目录正确沿用了已有 env |
-| Git 和敏感文件 | 核对首次暂存清单及忽略项。源码和模板的常见私钥/API Token 模式未命中。本地无提交历史；指定 GitHub 仓库未返回分支 |
+| Git 和敏感文件 | 核对合并索引及保留的源提交。实际配置、依赖、数据库与构建产物由忽略规则排除。 |
 
 ## 待处理及风险
 
