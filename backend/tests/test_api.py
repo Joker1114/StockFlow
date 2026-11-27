@@ -77,7 +77,7 @@ def test_document_excel_includes_filtered_documents_and_scan_details(client):
     serial = product(client, h, "独立物资", "SERIAL")
     code = "000000123456789012345"
     inbound = doc(client, h, "IN", [
-        alcohol_item(drink, 2, [{"code_value": code}]), item(tobacco, 3), item(serial, 1, ["000123"]),
+        alcohol_item(drink, 2, [{"code_value": code}]), item(tobacco, 3), item(serial, 2, ["000123", "000124"]),
     ])
     assert inbound.status_code == 201
     inbound = inbound.json()
@@ -93,26 +93,30 @@ def test_document_excel_includes_filtered_documents_and_scan_details(client):
     assert client.get(path).status_code == 401
     assert client.get("/api/documents/999999/export.xlsx", headers=staff).status_code == 404
     workbook = exported_workbook(client, path, staff)
-    assert workbook.sheetnames == ["入库单", "出库单", "入库单扫码", "出库单扫码"]
-    assert workbook["入库单"].max_row == 25
+    assert workbook.sheetnames == ["入库单", "出库单"]
+    assert workbook["入库单"].max_row == 26
     assert workbook["出库单"]["D1"].value == "领用公司"
     assert workbook["出库单"]["D2"].value == "{=1+1}"
     assert workbook["出库单"]["D2"].data_type == "s"
     assert workbook["出库单"]["M2"].value is None
     filtered = exported_workbook(client, f"{path}?direction=IN&product_id={drink}&supplier_id=1", staff)
-    assert filtered.sheetnames == ["入库单", "入库单扫码"]
+    assert filtered.sheetnames == ["入库单", "出库单"]
+    assert filtered["出库单"].max_row == 1
     row = list(filtered["入库单"].values)[1]
     created_at = datetime.fromisoformat(inbound["created_at"]).astimezone(timezone(timedelta(hours=8)))
     assert row[:4] == (inbound["doc_no"], created_at.replace(tzinfo=None, microsecond=0), "admin", "默认供应商")
     assert row[9:11] == (8, 2)
-    assert filtered["入库单"].max_row == 4
-    scans = filtered["入库单扫码"]
-    assert {cell[6] for cell in list(scans.values)[1:]} == {code, "000123"}
-    for row in list(scans.rows)[1:]:
-        linked_row = row[10].value
-        assert row[0].hyperlink.location == f"'入库单'!A{linked_row}"
-        assert filtered["入库单"][f"A{linked_row}"].value == row[0].value
-        assert filtered["入库单"][f"G{linked_row}"].value == row[3].value
+    inbound_sheet = filtered["入库单"]
+    assert inbound_sheet.max_row == 5
+    assert inbound_sheet["M1"].value == "扫码明细"
+    assert inbound_sheet["M2"].value == f"{code}（本次 6 瓶，容量 6 瓶，余 6 瓶）"
+    assert inbound_sheet["M3"].value is None
+    assert [inbound_sheet[f"M{i}"].value for i in (4, 5)] == ["000123", "000124"]
+    merged = {str(r) for r in inbound_sheet.merged_cells.ranges}
+    assert {"A2:A5", "B2:B5", "D2:D5", "G4:G5", "J4:J5"} <= merged
+    assert inbound_sheet["A5"].value is None
+    assert inbound_sheet["J4"].value == 2 and inbound_sheet["J5"].value is None
+    assert sum(inbound_sheet[f"J{i}"].value or 0 for i in range(2, 6)) == 13
 
     outbound_time = datetime.fromisoformat(outbound["created_at"]).astimezone(created_at.tzinfo)
     day_start = outbound_time.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -135,15 +139,17 @@ def test_document_excel_includes_filtered_documents_and_scan_details(client):
     document_list = exported_workbook(client, str(client.build_request("GET", path, params=filters).url), staff)
     assert document_list["入库单"].max_row == 1
     assert document_list["出库单"]["A2"].value == outbound["doc_no"]
-    assert document_list["出库单扫码"]["G2"].value == code
+    assert document_list["出库单"]["N2"].value.startswith(code)
     assert client.get(path, headers=staff, params=filters | {"created_before": filters["created_from"]}).status_code == 422
 
     single = exported_workbook(client, f"/api/documents/{outbound['id']}/export.xlsx", staff)
+    assert single.sheetnames == ["入库单", "出库单"]
+    assert single["入库单"].max_row == 1
     assert single["出库单"].max_row == 2
     assert single["出库单"]["A2"].value == outbound["doc_no"]
-    assert list(single["出库单扫码"].values)[1][6:] == (code, 3, 6, 3, 2)
-    assert single["出库单扫码"]["A2"].hyperlink.location == "'出库单'!A2"
-    assert single["出库单扫码"]["G2"].data_type == "s"
+    assert single["出库单"]["N1"].value == "扫码明细"
+    assert single["出库单"]["N2"].value == f"{code}（本次 3 瓶，容量 6 瓶，余 3 瓶）"
+    assert single["出库单"]["N2"].data_type == "s"
 
 
 def test_stock_excel_matches_category_search_and_remaining_boxes(client):

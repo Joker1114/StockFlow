@@ -195,13 +195,13 @@ onReachBottom(() => load())
       </view>
       <view class="row filter-controls filter-extra">
         <view class="filter-field">
-          <text class="label">开始日期（北京时间）</text>
+          <text class="label">开始日期</text>
           <picker mode="date" :value="startDate" :end="endDate || undefined" @change="chooseDate('start', $event)">
             <view class="input filter-input">{{ startDate || '不限' }}</view>
           </picker>
         </view>
         <view class="filter-field">
-          <text class="label">结束日期（北京时间）</text>
+          <text class="label">结束日期</text>
           <picker mode="date" :value="endDate" :start="startDate || undefined" @change="chooseDate('end', $event)">
             <view class="input filter-input">{{ endDate || '不限' }}</view>
           </picker>

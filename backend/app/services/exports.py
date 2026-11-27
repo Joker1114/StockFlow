@@ -1,6 +1,7 @@
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from itertools import chain, groupby
 from urllib.parse import quote
 
 from fastapi import Response
@@ -18,8 +19,8 @@ CATEGORIES = {"ALCOHOL": "酒水", "TOBACCO": "烟草"}
 DOCUMENT_TYPES = {"IN": "入库单", "OUT": "出库单"}
 
 
-def _workbook(buffer: BytesIO) -> Workbook:
-    return Workbook(buffer, {"constant_memory": True, "default_date_format": "yyyy-mm-dd hh:mm:ss"})
+def _workbook(buffer: BytesIO, *, constant_memory: bool = True) -> Workbook:
+    return Workbook(buffer, {"constant_memory": constant_memory, "default_date_format": "yyyy-mm-dd hh:mm:ss"})
 
 
 def _sheet(workbook, name, columns):
@@ -39,6 +40,15 @@ def _write_row(sheet, index, values):
         write = sheet.write_string if isinstance(value, str) else sheet.write
         if write(index, column, value) != 0:
             fail(422, "EXCEL_SHEET_LIMIT", "数据超过 Excel 工作表容量，请缩小筛选范围")
+
+
+def _write_merged(sheet, first, last, column, value, cell_format):
+    # Merge with an empty value, then write texts explicitly to keep them literal.
+    if first != last and sheet.merge_range(first, column, last, column, "", cell_format) != 0:
+        fail(422, "EXCEL_SHEET_LIMIT", "数据超过 Excel 工作表容量，请缩小筛选范围")
+    write = sheet.write_string if isinstance(value, str) else sheet.write
+    if write(first, column, value, cell_format) != 0:
+        fail(422, "EXCEL_SHEET_LIMIT", "数据超过 Excel 工作表容量，请缩小筛选范围")
 
 
 def _download(buffer: BytesIO, filename: str) -> Response:
@@ -73,44 +83,23 @@ def export_documents(direction: str | None = None, product_id: int | None = None
                    COALESCE(u.name,u.username) operator_name
             {selection}
         """
-        with _workbook(buffer) as workbook:
+        with _workbook(buffer, constant_memory=False) as workbook:
+            common_format = workbook.add_format({"valign": "top"})
+            date_format = workbook.add_format({"valign": "top", "num_format": "yyyy-mm-dd hh:mm:ss"})
+            scan_format = workbook.add_format({"text_wrap": True})
             sheets = {
                 key: _sheet(workbook, label, [
                     ("单据编号", 24), ("制单时间（北京时间）", 25), ("操作人", 19),
                     ("供应商" if key == "IN" else "领用公司", 25), ("类别", 12), ("品牌", 19),
                     ("物资名称", 26), ("规格", 19), ("单位", 10), ("数量", 11), ("散瓶数量", 13), ("备注", 36),
-                ] + ([("历史领用人", 25)] if key == "OUT" else []))
-                for key, label in DOCUMENT_TYPES.items() if direction is None or key == direction
+                ] + ([("历史领用人", 25)] if key == "OUT" else []) + [("扫码明细", 72)])
+                for key, label in DOCUMENT_TYPES.items()
             }
             next_row = dict.fromkeys(sheets, 1)
-            item_locations = {}
-            item_rows = db.execute(f"""WITH selected_documents AS ({selected_documents})
-                SELECT d.*,i.id item_id,p.category,p.brand,p.name,p.specification,p.unit,i.quantity,i.loose_quantity
-                FROM selected_documents d JOIN document_items i ON i.document_id=d.id
-                JOIN products p ON p.id=i.product_id ORDER BY d.id DESC,i.id""", args)
-            for item in item_rows:
-                key = item["direction"]
-                created_at = datetime.fromisoformat(item["created_at"]).astimezone(BEIJING_TIME)
-                recipient = item["recipient"] if item["recipient_company_id"] is not None else None
-                values = (
-                    item["doc_no"], created_at.replace(tzinfo=None, microsecond=0), item["operator_name"],
-                    item["supplier_name"] if key == "IN" else recipient,
-                    CATEGORIES[item["category"]], item["brand"], item["name"], item["specification"], item["unit"],
-                    item["quantity"], item["loose_quantity"] if item["category"] == "ALCOHOL" else None, item["remark"],
-                )
-                if key == "OUT":
-                    values += (item["recipient"] if item["recipient_company_id"] is None else None,)
-                item_locations[item["item_id"]] = next_row[key] + 1
-                _write_row(sheets[key], next_row[key], values)
-                next_row[key] += 1
-            for key, sheet in sheets.items():
-                sheet.autofilter(0, 0, next_row[key] - 1, 12 if key == "OUT" else 11)
-
             code_rows = db.execute(f"""WITH selected_documents AS ({selected_documents}),
                 selected_items AS (
-                    SELECT i.id,d.id document_id,d.doc_no,d.direction,p.brand,p.name,p.specification
-                    FROM selected_documents d JOIN document_items i ON i.document_id=d.id
-                    JOIN products p ON p.id=i.product_id
+                    SELECT i.id,d.id document_id FROM selected_documents d
+                    JOIN document_items i ON i.document_id=d.id
                 )
                 SELECT i.*,a.code_value,'箱码' code_type,a.quantity,a.capacity,a.remaining_after,a.id event_id
                 FROM selected_items i JOIN box_actions a ON a.document_item_id=i.id
@@ -118,31 +107,48 @@ def export_documents(direction: str | None = None, product_id: int | None = None
                 SELECT i.*,s.code_value,'扫码',NULL,NULL,NULL,s.id
                 FROM selected_items i JOIN scan_events s ON s.document_item_id=i.id
                 ORDER BY document_id DESC,id,code_type,event_id""", args)
-            code_sheets = {
-                key: _sheet(workbook, f"{DOCUMENT_TYPES[key]}扫码", [
-                    ("单据编号", 24), ("业务类型", 12), ("品牌", 19), ("物资名称", 26), ("规格", 19),
-                    ("编码类型", 12), ("编码", 38), ("本次瓶数", 13), ("箱容量（瓶）", 15), ("操作后箱内余瓶", 19),
-                    ("单据明细行", 15),
-                ]) for key in sheets
-            }
-            next_code_row = dict.fromkeys(code_sheets, 1)
-            for code in code_rows:
-                key = code["direction"]
-                label = DOCUMENT_TYPES[key]
-                row = next_code_row[key]
-                detail_row = item_locations[code["id"]]
-                sheet = code_sheets[key]
-                # Keep the row number as a plain reference even for exports beyond Excel's hyperlink limit.
-                _write_row(sheet, row, (
-                    code["doc_no"], label, code["brand"], code["name"], code["specification"],
-                    code["code_type"], code["code_value"], code["quantity"], code["capacity"], code["remaining_after"],
-                    detail_row,
-                ))
-                if row <= 65_530:
-                    sheet.write_url(row, 0, f"internal:'{label}'!A{detail_row}", string=code["doc_no"])
-                next_code_row[key] += 1
-            for key, sheet in code_sheets.items():
-                sheet.autofilter(0, 0, next_code_row[key] - 1, 10)
+            code = next(code_rows, None)
+            item_rows = db.execute(f"""WITH selected_documents AS ({selected_documents})
+                SELECT d.*,i.id item_id,p.category,p.brand,p.name,p.specification,p.unit,i.quantity,i.loose_quantity
+                FROM selected_documents d JOIN document_items i ON i.document_id=d.id
+                JOIN products p ON p.id=i.product_id ORDER BY d.id DESC,i.id""", args)
+            for _, items in groupby(item_rows, key=lambda row: row["id"]):
+                document = next(items)
+                key = document["direction"]
+                sheet = sheets[key]
+                scan_column = 13 if key == "OUT" else 12
+                document_first = next_row[key]
+                for item in chain((document,), items):
+                    item_first = next_row[key]
+                    while code is not None and code["id"] == item["item_id"]:
+                        text = code["code_value"]
+                        if code["code_type"] == "箱码":
+                            text += f"（本次 {code['quantity']} 瓶，容量 {code['capacity']} 瓶，余 {code['remaining_after']} 瓶）"
+                        _write_merged(sheet, next_row[key], next_row[key], scan_column, text, scan_format)
+                        next_row[key] += 1
+                        code = next(code_rows, None)
+                    if next_row[key] == item_first:
+                        next_row[key] += 1
+                    material = (
+                        CATEGORIES[item["category"]], item["brand"], item["name"], item["specification"], item["unit"],
+                        item["quantity"], item["loose_quantity"] if item["category"] == "ALCOHOL" else None,
+                    )
+                    for column, value in enumerate(material, 4):
+                        _write_merged(sheet, item_first, next_row[key] - 1, column, value, common_format)
+
+                document_last = next_row[key] - 1
+                created_at = datetime.fromisoformat(document["created_at"]).astimezone(BEIJING_TIME)
+                company = document["recipient"] if document["recipient_company_id"] is not None else None
+                party = document["supplier_name"] if key == "IN" else company
+                common = {
+                    0: document["doc_no"], 1: created_at.replace(tzinfo=None, microsecond=0),
+                    2: document["operator_name"], 3: party, 11: document["remark"],
+                }
+                if key == "OUT":
+                    common[12] = document["recipient"] if company is None else None
+                for column, value in common.items():
+                    _write_merged(sheet, document_first, document_last, column, value,
+                                  date_format if column == 1 else common_format)
         return _download(buffer, filename)
 
 
